@@ -12,7 +12,9 @@ DB_URL = os.getenv("DATABASE_URL")
 engine = create_async_engine(DB_URL)
 async_session_maker = async_sessionmaker(bind=engine, expire_on_commit=False)
 
-Base = DeclarativeBase()
+
+class Base(DeclarativeBase):
+    ...
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
