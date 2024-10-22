@@ -21,7 +21,7 @@ ACCESS_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
 ALGORITHM = os.getenv("ALGORITHM")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/jwt/login")
 
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -96,7 +96,8 @@ async def login_user(session: AsyncSession, email: str, password: str) -> dict:
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = None) -> Optional[schema.User]:
+async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = None):
+    print(f"token {token}")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -104,12 +105,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
     )
     try:
         payload = jwt.decode(token, ACCESS_SECRET, algorithms=[ALGORITHM])
+        print(f"token {payload}")
         id = payload.get("id")
         if id is None:
             raise credentials_exception
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user_by_id(session, id)
+    user = await get_user_by_id(session, id)
     if user is None:
         raise credentials_exception
     return user
