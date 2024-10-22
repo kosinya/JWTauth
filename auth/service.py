@@ -70,8 +70,8 @@ async def get_user_by_email(session: AsyncSession, email: str) -> Optional[schem
     return result.scalars().first()
 
 
-async def get_user_by_id(session: AsyncSession, id: int) -> Optional[schema.User]:
-    result = await session.execute(select(model.User).filter_by(id=id))
+async def get_user_by_id(session: AsyncSession, user_id: int):
+    result = await session.execute(select(model.User).filter_by(id=user_id))
     return result.scalars().first()
 
 
@@ -97,7 +97,6 @@ async def login_user(session: AsyncSession, email: str, password: str) -> dict:
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = None):
-    print(f"token {token}")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -105,13 +104,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
     )
     try:
         payload = jwt.decode(token, ACCESS_SECRET, algorithms=[ALGORITHM])
-        print(f"token {payload}")
-        id = payload.get("id")
+        user_id = payload.get("id")
         if id is None:
             raise credentials_exception
     except InvalidTokenError:
         raise credentials_exception
-    user = await get_user_by_id(session, id)
+    user = await get_user_by_id(session, user_id)
     if user is None:
         raise credentials_exception
-    return user
+    return schema.User(id=user.id,
+                       name=user.name,
+                       email=user.email,
+                       date_of_birth=user.date_of_birth,
+                       is_active=user.is_active,
+                       is_admin=user.is_admin)
