@@ -15,5 +15,10 @@ app.add_middleware(
 )
 app.include_router(router, prefix="/auth/jwt")
 
+
+@app.get('/')
+async def welcome():
+    return {"message": "Welcome to JWTauth"}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

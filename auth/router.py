@@ -20,18 +20,24 @@ async def register_user(user: schema.CreateUser, session: AsyncSession = Depends
     if not await service.create_user(session, user):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
-    return schema.User(name=user.name,
-                       email=user.email,
-                       date_of_birth=user.date_of_birth,
-                       is_active=user.is_active,
-                       is_admin=user.is_admin)
+    return schema.UserBase(name=user.name,
+                           email=user.email,
+                           date_of_birth=user.date_of_birth,
+                           is_active=user.is_active,
+                           is_admin=user.is_admin)
 
 
 @router.post("/login", tags=["auth"])
-async def login_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], session: AsyncSession = Depends(get_async_session)):
+async def login_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+                     session: AsyncSession = Depends(get_async_session)):
     return await service.login_user(session, form_data.username, form_data.password)
 
 
 @router.get('/get_current_user', tags=["auth"])
 async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_async_session)):
     return await service.get_current_user(token, session)
+
+
+@router.post('/refresh_token', tags=["auth"])
+async def refresh(token: str, session: AsyncSession = Depends(get_async_session)):
+    return await service.refresh_token(session, token)
