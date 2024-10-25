@@ -53,7 +53,7 @@ async def create_user(session: AsyncSession, user: schema.CreateUser):
         email=user.email,
         date_of_birth=user.date_of_birth,
         password=hashed_password,
-        is_active=True,
+        is_active=False,
         is_admin=False,
     )
 
@@ -94,6 +94,10 @@ async def login_user(session: AsyncSession, email: str, password: str) -> dict:
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+
     access_token = create_token(data={"id": user.id},
                                 expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     refresh_token = create_token(data={'id': user.id},
@@ -101,7 +105,7 @@ async def login_user(session: AsyncSession, email: str, password: str) -> dict:
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-async def refresh_token(session: AsyncSession, r_token: str):
+async def refresh_token(r_token: str):
     try:
         payload = jwt.decode(r_token, ACCESS_SECRET, algorithms=[ALGORITHM])
         user_id = payload.get("id")
@@ -136,3 +140,19 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
                        date_of_birth=user.date_of_birth,
                        is_active=user.is_active,
                        is_admin=user.is_admin)
+
+
+async def user_activation(session: AsyncSession, email: str):
+    user = await get_user_by_email(session, email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already active")
+    user.is_active = True
+    session.add(user)
+    try:
+        await session.commit()
+        return True
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

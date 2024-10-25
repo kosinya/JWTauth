@@ -13,3 +13,12 @@ class User(Base):
     password = Column(String(), nullable=False)
     is_admin = Column(Boolean(), default=False, nullable=False)
     is_active = Column(Boolean(), default=False, nullable=False)
+
+
+# class Activation(Base):
+#     __tablename__ = 'activations'
+#
+#     id = Column(Integer(), primary_key=True)
+#     user_email = Column(String(), unique=True, nullable=False)
+#     code = Column(String(), nullable=False)
+#     is_active = Column(Boolean(), default=False, nullable=False)
