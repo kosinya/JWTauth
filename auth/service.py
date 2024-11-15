@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -95,9 +96,6 @@ async def login_user(session: AsyncSession, email: str, password: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
-
     access_token = create_token(data={"id": user.id},
                                 expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     refresh_token = create_token(data={'id': user.id},
@@ -142,17 +140,58 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
                        is_admin=user.is_admin)
 
 
-async def user_activation(session: AsyncSession, email: str):
+async def create_confirmation_code(session: AsyncSession, email: str):
     user = await get_user_by_email(session, email)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+
     if user.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already active")
-    user.is_active = True
-    session.add(user)
+        raise HTTPException(status_code=403, detail="User is already active")
+
+    alphabet = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    code = ""
+    for i in range(6):
+        code += random.choice(alphabet)
+
+    check = await session.execute(select(model.Activation).filter_by(user_email=email))
+    if check.scalars().first():
+        await session.delete(check.scalars().first())
+
+    new_code = model.Activation(
+        user_email=email,
+        code=code,
+        expiration_date=(datetime.now() + timedelta(minutes=10)).timestamp()
+    )
+
+    session.add(new_code)
     try:
         await session.commit()
-        return True
     except Exception as e:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        print(e)
+
+    return code
+
+
+async def user_activation(session: AsyncSession, user, code: str):
+    activation = await session.execute(select(model.Activation).filter_by(user_email=user.email))
+    res = activation.scalars().first()
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activation code not found")
+
+    if res.code == code:
+        if res.expiration_date < str(datetime.now().timestamp()):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Activation code expired")
+
+        user = await get_user_by_email(session, user.email)
+        user.is_active = True
+        session.add(user)
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Activation code invalid")
+
+    return True

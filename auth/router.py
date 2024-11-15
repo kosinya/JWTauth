@@ -39,5 +39,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
 
 
 @router.post('/refresh_token', tags=["auth"])
-async def refresh(token: str, session: AsyncSession = Depends(get_async_session)):
-    return await service.refresh_token(session, token)
+async def refresh(token: str):
+    return await service.refresh_token(token)
+
+
+@router.post('/active_user', tags=["auth"])
+async def activate(token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_async_session),
+                   code: str = None):
+    user = await get_current_user(token, session)
+    return await service.user_activation(session, user, code)
