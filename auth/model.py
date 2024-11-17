@@ -22,3 +22,13 @@ class Activation(Base):
     user_email = Column(String(), unique=True, nullable=False)
     code = Column(String(), nullable=False)
     expiration_date = Column(String(), nullable=False)
+
+
+class Reset(Base):
+    __tablename__ = 'resets'
+
+    id = Column(Integer(), primary_key=True)
+    user_email = Column(String(), unique=True, nullable=False)
+    code = Column(String(), nullable=False)
+    date_of_creation = Column(String(), nullable=False)
+    expiration_date = Column(String(), nullable=False)

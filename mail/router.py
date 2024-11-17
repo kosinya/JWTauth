@@ -15,4 +15,6 @@ async def send_code(token: str = Depends(auth_service.oauth2_scheme), session: A
     return await mail_service.send_activation_email(session, user.email)
 
 
-
+@router.post('/get_reset_code', tags=['mail'])
+async def send_reset_code(session: AsyncSession = Depends(get_async_session), email: str = None):
+    return await mail_service.send_reset_password_code(session, email)

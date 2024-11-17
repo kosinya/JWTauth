@@ -2,6 +2,8 @@ import os
 import random
 from typing import Optional
 
+import secrets
+
 from dotenv import load_dotenv
 from datetime import datetime
 from datetime import timedelta, timezone
@@ -13,9 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 import jwt
+from starlette.responses import JSONResponse
 
 from auth import schema
 from auth import model
+from mail import service as mail_service
 
 load_dotenv()
 ACCESS_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
@@ -140,6 +144,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
                        is_admin=user.is_admin)
 
 
+def generation_code():
+    alphabet = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    code = ""
+    for i in range(6):
+        code += random.choice(alphabet)
+    return code
+
+
 async def create_confirmation_code(session: AsyncSession, email: str):
     user = await get_user_by_email(session, email)
     if not user:
@@ -148,14 +160,18 @@ async def create_confirmation_code(session: AsyncSession, email: str):
     if user.is_active:
         raise HTTPException(status_code=403, detail="User is already active")
 
-    alphabet = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-    code = ""
-    for i in range(6):
-        code += random.choice(alphabet)
+    code = generation_code()
 
     check = await session.execute(select(model.Activation).filter_by(user_email=email))
-    if check.scalars().first():
-        await session.delete(check.scalars().first())
+    check = check.scalars().first()
+
+    if check:
+        await session.delete(check)
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            print(e)
 
     new_code = model.Activation(
         user_email=email,
@@ -194,4 +210,94 @@ async def user_activation(session: AsyncSession, user, code: str):
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Activation code invalid")
 
-    return True
+    return JSONResponse(status_code=status.HTTP_200_OK)
+
+
+def generating_temporary_password():
+    chars = 'abcdefghijklnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    password = ''.join(secrets.choice(chars) for _ in range(10))
+    return password
+
+
+async def create_reset_password_code(session: AsyncSession, email: str):
+    user = await get_user_by_email(session, email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+
+    code = generation_code()
+
+    check = await session.execute(select(model.Reset).filter_by(user_email=email))
+    check = check.scalars().first()
+
+    if check:
+        t = datetime.now().timestamp() - float(check.date_of_creation)
+        if t < timedelta(minutes=3).total_seconds():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"You cannot re-order the code earlier than after "
+                                       f"{int(timedelta(minutes=3).total_seconds() - t)} seconds")
+        await session.delete(check)
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            print(e)
+
+    new_code = model.Reset(
+        user_email=email,
+        code=code,
+        date_of_creation=datetime.now().timestamp(),
+        expiration_date=(datetime.now() + timedelta(minutes=10)).timestamp()
+    )
+
+    session.add(new_code)
+    try:
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        print(e)
+
+    return code
+
+
+async def reset_password(session: AsyncSession, email: str, code: str):
+    user = await get_user_by_email(session, email)
+
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+
+    reset = await session.execute(select(model.Reset).filter_by(user_email=user.email))
+    res = reset.scalars().first()
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Password reset code not found")
+
+    if code == res.code:
+        if res.expiration_date < str(datetime.now().timestamp()):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password reset code expired")
+
+        temporary_password = generating_temporary_password()
+        user.password = get_password_hash(temporary_password)
+        session.add(user)
+        await session.delete(res)
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Password reset code invalid")
+
+    template = f"""
+            <html>
+                <body>
+                    <p>Приветствуем, дорогой пользователь!</p>
+                    <p>Временный пароль для входа: {temporary_password}</p>
+                    <p>Обязательно смените его в приложении!</p>
+                </body>
+            </html>
+        """
+    try:
+        await mail_service.send_email_message(email, template)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content="success")

@@ -48,3 +48,8 @@ async def activate(token: str = Depends(oauth2_scheme), session: AsyncSession = 
                    code: str = None):
     user = await get_current_user(token, session)
     return await service.user_activation(session, user, code)
+
+
+@router.post('/reset_password', tags=['auth'])
+async def reset_password(session: AsyncSession = Depends(get_async_session), email: str = None, code: str = None):
+    return await service.reset_password(session, email, code)

@@ -1,4 +1,4 @@
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 from fastapi import status
@@ -25,10 +25,10 @@ fm = FastMail(config)
 async def send_email_message(email: str, template: str):
 
     message = MessageSchema(
-        subject="Fastapi-Mail module",
+        subject="Mail service",
         recipients=[email],
         body=template,
-        subtype="html"
+        subtype=MessageType.html
     )
 
     try:
@@ -42,10 +42,31 @@ async def send_activation_email(session: AsyncSession, email: str):
     code = await service.create_confirmation_code(session, email)
 
     template = f"""
-        <html><body>
-            <p>Приветствуем, дорогой пользователь!</p>
-            <p>Код для подтверждения почты и активации аккаунта: {code}</p>
-        </body></html>
+        <html>
+            <body>
+                <p>Приветствуем, дорогой пользователь!</p>
+                <p>Код для подтверждения почты и активации аккаунта: {code}</p>
+            </body>
+        </html>
+    """
+
+    if await send_email_message(email, template):
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"success": True})
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"success": False})
+
+
+async def send_reset_password_code(session: AsyncSession, email: str):
+    code = await service.create_reset_password_code(session, email)
+
+    template = f"""
+            <html>
+                <body>
+                    <p>Приветствуем, дорогой пользователь!</p>
+                    <p>Код для сброса пароля: {code}</p>
+                    <p>Никому не сообщайте его!</p>
+                    <p>P.S. Альбек, саламыч!</p>
+                </body>
+            </html>
     """
 
     if await send_email_message(email, template):
