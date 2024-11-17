@@ -46,6 +46,12 @@ def get_password_hash(password: str):
     return pwd_context.hash(password)
 
 
+def check_password(password: str):
+    if len(password) < 8:
+        return False
+    return True
+
+
 def verify_password(plain_password, hashed_password) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -301,3 +307,23 @@ async def reset_password(session: AsyncSession, email: str, code: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     return JSONResponse(status_code=status.HTTP_200_OK, content="success")
+
+
+async def change_password(session: AsyncSession, email: str, new_password: str):
+    if not check_password(new_password):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="The password must consist of at least 8 characters")
+
+    user = await get_user_by_email(session, email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+
+    user.password = get_password_hash(new_password)
+    session.add(user)
+    try:
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content="The password has been successfully changed")
